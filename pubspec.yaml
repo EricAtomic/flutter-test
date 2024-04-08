@@ -1,0 +1,26 @@
+name: atomic_sdk_flutter
+description: Flutter wrapper for the Atomic iOS and Android SDKs.
+version: 23.4.0
+homepage: https://atomic.io
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  very_good_analysis: ^5.1.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: io.atomic.atomic_sdk_flutter
+        pluginClass: AACFlutterPlugin
+      ios:
+        pluginClass: AACFlutterPlugin

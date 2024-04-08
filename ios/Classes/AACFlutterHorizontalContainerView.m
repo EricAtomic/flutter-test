@@ -1,0 +1,140 @@
+//
+// AACFlutterHorizontalContainerView.m
+// Atomic SDK - Flutter
+// Copyright © 2022 Atomic.io Limited. All rights reserved.
+//
+
+#import "AACFlutterHorizontalContainerView.h"
+#import "AACConfiguration+Flutter.h"
+#import "AACFlutterContainerViewController.h"
+
+@import AtomicSDK;
+
+@implementation AACFlutterHorizontalContainerViewFactory 
+
+- (NSObject<FlutterPlatformView> *)createWithFrame:(CGRect)frame
+                                    viewIdentifier:(int64_t)viewId
+                                         arguments:(id)args {
+    return [[AACFlutterHorizontalContainerView alloc] initWithFrame:frame
+                                                     viewIdentifier:viewId
+                                                          arguments:args
+                                                    binaryMessenger:self.messenger];
+}
+
+@end
+
+/**
+ Custom subclass of horizontal container view required to workaround a bug in Flutter's gesture handling.
+ */
+@interface AACFlutterHorizontalContainerViewImpl: AACHorizontalContainerView
+
+@end
+
+@implementation AACFlutterHorizontalContainerViewImpl
+
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *view = [super hitTest:point withEvent:event];
+    
+    if([NSStringFromClass(view.class) isEqualToString:@"AACLabel"]) {
+        for(UIGestureRecognizer *recognizer in view.gestureRecognizers) {
+            // When tapping on a label, ensure touches bubble up immediately.
+            // This isn't an issue in native iOS implementations, but appears to be a conflict
+            // with Flutter's gesture recognition engine.
+            // Without this, the user has to long press on a submit button to submit a card, and this only works intermittently.
+            recognizer.delaysTouchesEnded = NO;
+        }
+    }
+    
+    return view;
+}
+
+@end
+
+@interface AACFlutterHorizontalContainerView () <AACHorizontalContainerViewDelegate, AACStreamContainerActionDelegate>
+
+@property (nonatomic, strong) AACFlutterContainerViewController *containerViewController;
+@property (nonatomic, strong) AACHorizontalContainerView *horizontalContainerView;
+
+@end
+
+@implementation AACFlutterHorizontalContainerView
+
+- (NSString *)viewType {
+    return @"io.atomic.sdk.horizontalContainer";
+}
+
+- (UIView *)view {
+    return self.containerViewController.view;
+}
+
+- (void)createViewWithFrame:(CGRect)frame containerId:(NSString *)containerId configuration:(AACConfiguration *)configuration {
+    if([configuration isKindOfClass:AACHorizontalContainerConfiguration.class] == NO) {
+        return;
+    }
+    AACHorizontalContainerConfiguration *hConfig = (AACHorizontalContainerConfiguration *)configuration;
+    if(containerId == nil) {
+        return;
+    }
+    
+    self.containerViewController = [[AACFlutterContainerViewController alloc] init];
+    
+    UIViewController *rootViewController = [self rootViewController];
+    [self.containerViewController willMoveToParentViewController:rootViewController];
+    [rootViewController addChildViewController:self.containerViewController];
+    [self.containerViewController didMoveToParentViewController:rootViewController];
+    
+    self.horizontalContainerView = [[AACFlutterHorizontalContainerViewImpl alloc] initWithFrame:frame
+                                                                            containerIdentifier:containerId
+                                                                                  configuration:hConfig];
+    
+    self.horizontalContainerView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.containerViewController.view addSubview:self.horizontalContainerView];
+    self.horizontalContainerView.delegate = self;
+    
+    NSArray *hConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-(0)-[view]-(0)-|" options:0 metrics:nil views:@{ @"view": self.horizontalContainerView }];
+    NSArray *vConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"V:|-(0)-[view]-(0)-|" options:0 metrics:nil views:@{ @"view": self.horizontalContainerView }];
+    
+    [self.containerViewController.view addConstraints:hConstraints];
+    [self.containerViewController.view addConstraints:vConstraints];
+    [self.channel invokeMethod:@"viewLoaded" arguments:nil];
+}
+
+- (void)dealloc {
+    [self.containerViewController willMoveToParentViewController:nil];
+    [self.containerViewController.view removeFromSuperview];
+    [self.containerViewController removeFromParentViewController];
+    [self.containerViewController didMoveToParentViewController:nil];
+    
+    self.containerViewController = nil;
+    
+    [self.horizontalContainerView removeFromSuperview];
+    self.horizontalContainerView.delegate = nil;
+    self.horizontalContainerView = nil;
+}
+
+- (void)horizontalContainerView:(AACHorizontalContainerView *)containerView willChangeSize:(CGSize)newSize {
+    CGSize adjustedSize = CGSizeMake(newSize.width, MAX(1, newSize.height));
+    
+    [self.horizontalContainerView layoutIfNeeded];
+    [self.channel invokeMethod:@"sizeChanged"
+                     arguments:@{
+                         @"width": @(adjustedSize.width),
+                         @"height": @(adjustedSize.height)
+                     }];
+}
+
+- (void)applyFilters:(NSArray<AACCardFilter *> *)filters {
+    [self.horizontalContainerView applyFilters:filters];
+}
+
+- (void)refresh {
+    [self.horizontalContainerView refresh];
+}
+
+- (void)updateVariables {
+    [self.horizontalContainerView updateVariables];
+}
+
+@end
+
+
